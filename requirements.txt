@@ -1,0 +1,7 @@
+torch>=2.0
+torchvision
+nibabel>=5.0
+scikit-image>=0.21
+matplotlib
+numpy
+scipy
