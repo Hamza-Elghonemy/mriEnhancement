@@ -1,5 +1,5 @@
 .venv
-outputs
 __pycache__
 *.pyc
 MRIData
+checkpoints/
