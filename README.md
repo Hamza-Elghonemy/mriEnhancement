@@ -1,10 +1,10 @@
-# IXI MRI Super-Resolution (Notebook Summary)
+# IXI MRI Super-Resolution 
 
 This repo contains `IXI_dataset.ipynb`, where a 2D MRI super-resolution pipeline was built and tested on IXI T1 scans.
 
-## What Was Done (Brief)
+## Pipeline
 
-- Loaded IXI `.nii/.nii.gz` files and handled corrupted/empty files safely.
+- Loaded IXI `.nii/.nii.gz` files and handled corrupted/empty files.
 - Built a preprocessing pipeline:
   - intensity normalization
   - 2D slice extraction from 3D MRI volumes (axial by default)
@@ -34,9 +34,7 @@ This repo contains `IXI_dataset.ipynb`, where a 2D MRI super-resolution pipeline
 - Training setup in notebook: **2D SR on extracted slices**
 - Validation setup: **deterministic center-slice evaluation** (to avoid random-slice bias)
 
-## Results (Current Snapshot)
-
-From a logged run in the notebook (before final residual/deterministic retraining pass):
+## Results
 
 - Baseline (LR->HR): `PSNR 25.903`, `SSIM 0.8059`
 - SRCNN: `PSNR 26.615`, `SSIM 0.8444`
@@ -45,7 +43,3 @@ From a logged run in the notebook (before final residual/deterministic retrainin
 Also observed:
 
 - Some individual slices were worse than baseline, so fixed-set evaluation was added to report improvement rate, not just single-sample visuals.
-
-## Main File
-
-- `IXI_dataset.ipynb`
