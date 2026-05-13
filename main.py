@@ -94,11 +94,21 @@ def main():
     # Phase 5: Generate visualizations
     # ================================================================
     print("\n▸ Phase 5: Generating visualizations …")
-    from visualize import plot_loss_curves, plot_comparison_grid, plot_error_maps
+    from visualize import (
+        plot_loss_curves,
+        plot_perceptual_loss_curves,
+        plot_comparison_grid,
+        plot_error_maps,
+        plot_triplet_comparison,
+        plot_rician_noise_examples,
+    )
 
     plot_loss_curves()
+    plot_perceptual_loss_curves()
     plot_comparison_grid(val_loader, n_samples=5)
     plot_error_maps(val_loader, n_samples=3)
+    plot_triplet_comparison()
+    plot_rician_noise_examples()
 
     # ================================================================
     # Done

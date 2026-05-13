@@ -29,11 +29,25 @@ else:
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Raw BIDS dataset delivered by Zenodo
-DATA_ROOT = PROJECT_ROOT / (
-    "Paired 64mT and 3T Brain MRI Scans of Healthy Subjects "
-    "for Neuroimaging Research"
-) / "Data"
+# Raw BIDS dataset delivered by Zenodo. The workspace may store it either in
+# the documented canonical folder or in the checked-in MRIData/Data tree.
+def _resolve_data_root() -> Path:
+    candidates = [
+        PROJECT_ROOT / (
+            "Paired 64mT and 3T Brain MRI Scans of Healthy Subjects "
+            "for Neuroimaging Research"
+        ) / "Data",
+        PROJECT_ROOT / "MRIData" / "Data",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
+
+
+DATA_ROOT = _resolve_data_root()
 DIR_3T  = DATA_ROOT / "3T data"
 DIR_64MT = DATA_ROOT / "64mT data"
 
@@ -89,3 +103,13 @@ NUM_WORKERS   = 2
 # StepLR scheduler (mitigates overfitting on small dataset)
 LR_STEP_SIZE  = 20
 LR_GAMMA      = 0.5
+
+# ---------------------------------------------------------------------------
+# Bonus components (perceptual loss + Rician noise augmentation)
+# ---------------------------------------------------------------------------
+USE_PERCEPTUAL_LOSS = True
+PERCEPTUAL_WEIGHT   = 0.10
+
+USE_RICIAN_NOISE = True
+RICIAN_SIGMA     = 0.05
+RICIAN_PROB      = 0.50

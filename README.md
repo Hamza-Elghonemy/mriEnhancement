@@ -203,6 +203,22 @@ Detailed error analysis showing absolute difference heatmaps with anatomically a
   <img src="outputs/figures/error_maps.png" alt="Per-pixel error maps with anatomical annotations" width="90%"/>
 </p>
 
+### Perceptual Loss Curves (Bonus)
+
+Training curves for total, L1, and perceptual loss components when perceptual loss is enabled:
+
+<p align="center">
+  <img src="outputs/figures/perceptual_loss_curves.png" alt="Perceptual loss component curves" width="90%"/>
+</p>
+
+### Rician Noise Augmentation (Bonus)
+
+Side-by-side view of a raw 64mT slice, Rician-noised slice, and absolute difference heatmap:
+
+<p align="center">
+  <img src="outputs/figures/rician_noise_examples.png" alt="Rician noise augmentation examples" width="90%"/>
+</p>
+
 ---
 
 ## Project Structure
@@ -232,6 +248,8 @@ mriEnhancement/
 │   │   ├── loss_curves.png
 │   │   ├── comparison_grid.png
 │   │   └── error_maps.png
+│   │   ├── perceptual_loss_curves.png
+│   │   ├── rician_noise_examples.png
 │   ├── evaluation_results.json        # Synthetic eval metrics
 │   └── evaluation_cross_scanner.json  # Cross-scanner eval metrics
 │
@@ -319,6 +337,11 @@ All hyperparameters are centralized in [`config.py`](config.py):
 | `LR_STEP_SIZE` | 20 | StepLR decay interval |
 | `LR_GAMMA` | 0.5 | StepLR decay factor |
 | `SLICE_TRIM_FRAC` | 0.10 | Fraction of noisy edge slices discarded per volume |
+| `USE_PERCEPTUAL_LOSS` | True | Enable VGG-19 perceptual loss |
+| `PERCEPTUAL_WEIGHT` | 0.10 | Weight for perceptual loss term |
+| `USE_RICIAN_NOISE` | True | Enable Rician noise augmentation |
+| `RICIAN_SIGMA` | 0.05 | Noise sigma for Rician model |
+| `RICIAN_PROB` | 0.50 | Probability of applying noise per batch |
 
 ---
 

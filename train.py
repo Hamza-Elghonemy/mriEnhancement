@@ -2,6 +2,7 @@
 train.py — Training loop for SRCNN and U-Net SR models.
 
 Trains each model with L1 loss, Adam optimiser and StepLR scheduler.
+Optionally adds perceptual loss and Rician noise augmentation.
 Saves the best checkpoint (by validation loss) and exports a per-epoch
 loss log for later visualisation.
 """
@@ -21,7 +22,7 @@ from torch.utils.data import DataLoader
 
 import config as cfg
 from dataset import get_dataloaders
-from models import SRCNN, UNetSR
+from models import SRCNN, UNetSR, PerceptualLoss, add_rician_noise
 
 
 # ============================================================================
@@ -30,42 +31,88 @@ from models import SRCNN, UNetSR
 
 def train_one_epoch(model: nn.Module,
                     loader: DataLoader,
-                    criterion: nn.Module,
+                    l1_criterion: nn.Module,
                     optimizer: torch.optim.Optimizer,
-                    device: torch.device) -> float:
-    """Run one training epoch.  Returns average batch loss."""
+                    device: torch.device,
+                    perceptual_criterion: Optional[nn.Module] = None,
+                    perceptual_weight: float = 0.0) -> Dict[str, float]:
+    """Run one training epoch.  Returns averaged loss components."""
     model.train()
-    running_loss = 0.0
+    running_total = 0.0
+    running_l1 = 0.0
+    running_perceptual = 0.0
     for lr_batch, hr_batch in loader:
         lr_batch = lr_batch.to(device)
         hr_batch = hr_batch.to(device)
 
+        if cfg.USE_RICIAN_NOISE and random.random() < cfg.RICIAN_PROB:
+            lr_batch = add_rician_noise(lr_batch, sigma=cfg.RICIAN_SIGMA)
+
         pred = model(lr_batch)
-        loss = criterion(pred, hr_batch)
+        l1_loss = l1_criterion(pred, hr_batch)
+        total_loss = l1_loss
+        perceptual_loss = None
+        if perceptual_criterion is not None:
+            perceptual_loss = perceptual_criterion(pred, hr_batch)
+            total_loss = l1_loss + perceptual_weight * perceptual_loss
 
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
-        running_loss += loss.item() * lr_batch.size(0)
-    return running_loss / len(loader.dataset)
+        batch_size = lr_batch.size(0)
+        running_total += total_loss.item() * batch_size
+        running_l1 += l1_loss.item() * batch_size
+        if perceptual_loss is not None:
+            running_perceptual += perceptual_loss.item() * batch_size
+
+    dataset_size = len(loader.dataset)
+    stats = {
+        "total": running_total / dataset_size,
+        "l1": running_l1 / dataset_size,
+    }
+    if perceptual_criterion is not None:
+        stats["perceptual"] = running_perceptual / dataset_size
+    return stats
 
 
 @torch.no_grad()
 def validate(model: nn.Module,
              loader: DataLoader,
-             criterion: nn.Module,
-             device: torch.device) -> float:
-    """Run validation.  Returns average loss."""
+             l1_criterion: nn.Module,
+             device: torch.device,
+             perceptual_criterion: Optional[nn.Module] = None,
+             perceptual_weight: float = 0.0) -> Dict[str, float]:
+    """Run validation.  Returns averaged loss components."""
     model.eval()
-    running_loss = 0.0
+    running_total = 0.0
+    running_l1 = 0.0
+    running_perceptual = 0.0
     for lr_batch, hr_batch in loader:
         lr_batch = lr_batch.to(device)
         hr_batch = hr_batch.to(device)
         pred = model(lr_batch)
-        loss = criterion(pred, hr_batch)
-        running_loss += loss.item() * lr_batch.size(0)
-    return running_loss / len(loader.dataset)
+        l1_loss = l1_criterion(pred, hr_batch)
+        total_loss = l1_loss
+        perceptual_loss = None
+        if perceptual_criterion is not None:
+            perceptual_loss = perceptual_criterion(pred, hr_batch)
+            total_loss = l1_loss + perceptual_weight * perceptual_loss
+
+        batch_size = lr_batch.size(0)
+        running_total += total_loss.item() * batch_size
+        running_l1 += l1_loss.item() * batch_size
+        if perceptual_loss is not None:
+            running_perceptual += perceptual_loss.item() * batch_size
+
+    dataset_size = len(loader.dataset)
+    stats = {
+        "total": running_total / dataset_size,
+        "l1": running_l1 / dataset_size,
+    }
+    if perceptual_criterion is not None:
+        stats["perceptual"] = running_perceptual / dataset_size
+    return stats
 
 
 # ============================================================================
@@ -97,12 +144,24 @@ def train_model(
     log : dict with keys "train_loss" and "val_loss", each a list[float].
     """
     model = model.to(device)
-    criterion = nn.L1Loss()
+    l1_criterion = nn.L1Loss()
+    perceptual_criterion = None
+    if cfg.USE_PERCEPTUAL_LOSS:
+        perceptual_criterion = PerceptualLoss().to(device)
+        perceptual_criterion.eval()
     optimizer = Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=cfg.LR_STEP_SIZE, gamma=cfg.LR_GAMMA)
 
     best_val = float("inf")
-    log: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+    log: Dict[str, List[float]] = {
+        "train_loss": [],
+        "val_loss": [],
+        "train_l1": [],
+        "val_l1": [],
+    }
+    if perceptual_criterion is not None:
+        log["train_perceptual"] = []
+        log["val_perceptual"] = []
 
     print(f"\n{'='*60}")
     print(f"  Training {model_name}  |  device={device}  |  epochs={num_epochs}")
@@ -110,22 +169,46 @@ def train_model(
 
     for epoch in range(1, num_epochs + 1):
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss   = validate(model, val_loader, criterion, device)
+        train_stats = train_one_epoch(
+            model,
+            train_loader,
+            l1_criterion,
+            optimizer,
+            device,
+            perceptual_criterion=perceptual_criterion,
+            perceptual_weight=cfg.PERCEPTUAL_WEIGHT,
+        )
+        val_stats = validate(
+            model,
+            val_loader,
+            l1_criterion,
+            device,
+            perceptual_criterion=perceptual_criterion,
+            perceptual_weight=cfg.PERCEPTUAL_WEIGHT,
+        )
         scheduler.step()
 
-        log["train_loss"].append(train_loss)
-        log["val_loss"].append(val_loss)
+        log["train_loss"].append(train_stats["total"])
+        log["val_loss"].append(val_stats["total"])
+        log["train_l1"].append(train_stats["l1"])
+        log["val_l1"].append(val_stats["l1"])
+        if perceptual_criterion is not None:
+            log["train_perceptual"].append(train_stats["perceptual"])
+            log["val_perceptual"].append(val_stats["perceptual"])
 
         dt = time.time() - t0
         lr_now = optimizer.param_groups[0]["lr"]
-        marker = " ★" if val_loss < best_val else ""
+        marker = " ★" if val_stats["total"] < best_val else ""
+        extra = ""
+        if perceptual_criterion is not None:
+            extra = (f" l1={train_stats['l1']:.5f} "
+                     f"ploss={train_stats['perceptual']:.5f}")
         print(f"  [{model_name}] Epoch {epoch:3d}/{num_epochs} | "
-              f"train={train_loss:.5f}  val={val_loss:.5f}  "
-              f"lr={lr_now:.1e}  ({dt:.1f}s){marker}")
+              f"train={train_stats['total']:.5f}  val={val_stats['total']:.5f}"
+              f"{extra}  lr={lr_now:.1e}  ({dt:.1f}s){marker}")
 
-        if val_loss < best_val:
-            best_val = val_loss
+        if val_stats["total"] < best_val:
+            best_val = val_stats["total"]
             torch.save(model.state_dict(), checkpoint_path)
 
     print(f"  [{model_name}] Best val loss: {best_val:.5f}  →  {checkpoint_path}")
